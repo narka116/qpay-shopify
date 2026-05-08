@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="mn">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>QPay-ээр төлөх — DRIFTHUB</title>
+  <style>
+    :root {
+      --bg: #0b0d12;
+      --card: #161a23;
+      --text: #e9ecf1;
+      --muted: #8b93a7;
+      --accent: #00d2a8;
+      --border: #232838;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .card { width: 100%; max-width: 420px; background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 28px; }
+    h1 { margin: 0 0 4px; font-size: 20px; }
+    .sub { color: var(--muted); font-size: 14px; margin-bottom: 20px; }
+    .amount { font-size: 32px; font-weight: 700; margin: 8px 0 24px; }
+    .qr-box { background: #fff; border-radius: 12px; padding: 16px; display: flex; justify-content: center; }
+    .qr-box img { width: 100%; height: auto; max-width: 280px; display: block; }
+    .banks { margin-top: 20px; }
+    .bank-link { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: #1f2433; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; text-decoration: none; color: var(--text); font-size: 14px; }
+    .bank-link:hover { border-color: var(--accent); }
+    .bank-link img { width: 28px; height: 28px; border-radius: 6px; }
+    .status { margin-top: 16px; padding: 10px; border-radius: 8px; font-size: 14px; text-align: center; }
+    .status.pending { background: rgba(255,200,0,0.08); color: #ffd166; }
+    .status.paid { background: rgba(0,210,168,0.12); color: var(--accent); }
+    .status.error { background: rgba(255,80,80,0.1); color: #ff6b6b; }
+    .small { font-size: 12px; color: var(--muted); margin-top: 12px; line-height: 1.5; }
+    .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 6px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>QPay-ээр төлөх</h1>
+      <div class="sub" id="sub">Захиалга ачаалж байна…</div>
+      <div class="amount" id="amount">—</div>
+
+      <div id="qr-container" style="display:none">
+        <div class="qr-box"><img id="qr" alt="QPay QR" /></div>
+        <div class="banks" id="banks"></div>
+      </div>
+
+      <div class="status pending" id="status">
+        <span class="spinner"></span> Төлбөр хүлээж байна…
+      </div>
+
+      <div class="small">
+        Утсаараа дээрх QR-г унших эсвэл банкныхаа линкийг дарж төлнө.
+        Төлбөр хийсний дараа энэ хуудас автоматаар захиалгын баталгаажуулалтын
+        хуудас руу шилжинэ.
+      </div>
+    </div>
+  </div>
+
+<script>
+(async function() {
+  const params = new URLSearchParams(location.search);
+  const orderId = params.get('order_id');
+  const secret = params.get('s');
+  const successUrl = params.get('return') || '';
+
+  const $ = id => document.getElementById(id);
+
+  if (!orderId) {
+    $('status').className = 'status error';
+    $('status').textContent = 'order_id заагдаагүй байна';
+    return;
+  }
+
+  let order;
+  try {
+    const r = await fetch(`/api/order/${orderId}`);
+    if (!r.ok) throw new Error('Захиалга олдсонгүй');
+    order = await r.json();
+  } catch (e) {
+    $('status').className = 'status error';
+    $('status').textContent = e.message;
+    return;
+  }
+
+  $('sub').textContent = `${order.name} — ${order.customer_email || ''}`;
+  $('amount').textContent = `${Number(order.total_price).toLocaleString('mn-MN')} ₮`;
+
+  if (order.financial_status === 'paid') {
+    $('status').className = 'status paid';
+    $('status').textContent = 'Энэ захиалга аль хэдийн төлөгдсөн байна';
+    if (successUrl) setTimeout(() => location.href = successUrl, 1500);
+    return;
+  }
+
+  let invoice;
+  try {
+    const r = await fetch('/api/invoice/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order_id: orderId, secret }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || 'invoice үүсгэж чадсангүй');
+    invoice = await r.json();
+  } catch (e) {
+    $('status').className = 'status error';
+    $('status').textContent = String(e.message || e);
+    return;
+  }
+
+  $('qr').src = `data:image/png;base64,${invoice.qr_image}`;
+  const banks = $('banks');
+  (invoice.urls || []).forEach(u => {
+    const a = document.createElement('a');
+    a.href = u.link;
+    a.className = 'bank-link';
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.innerHTML = `${u.logo ? '<img src="' + u.logo + '" alt="" />' : ''}<span>${u.description || u.name}</span>`;
+    banks.appendChild(a);
+  });
+  $('qr-container').style.display = 'block';
+
+  let done = false;
+  async function poll() {
+    if (done) return;
+    try {
+      const r = await fetch(`/api/invoice/${invoice.invoice_id}/status`);
+      const j = await r.json();
+      if (j.paid) {
+        done = true;
+        $('status').className = 'status paid';
+        $('status').textContent = 'Төлбөр амжилттай! Дамжуулж байна…';
+        setTimeout(() => {
+          location.href = successUrl || 'https://www.driftub.store/account/orders';
+        }, 1500);
+      }
+    } catch {}
+    if (!done) setTimeout(poll, 3000);
+  }
+  poll();
+})();
+</script>
+</body>
+</html>
