@@ -1,0 +1,26 @@
+<!--
+  ============================================================
+  Shopify дээр тохируулах: Settings → Checkout → Order status page
+  → Additional scripts хэсэгт энэ ХЭСГИЙГ хуулж тавина.
+  ============================================================
+  BACKEND_URL ба SECRET-ийг өөрийнхөөрөө сольж бичнэ.
+-->
+<script>
+(function() {
+  var BACKEND_URL = "https://your-app.onrender.com";   // Render deploy хийсний дараа авсан URL
+  var SECRET      = "санамсаргүй_урт_утга_үүсгэнэ";    // .env-ийн SHARED_SECRET-тэй ижил
+
+  // Зөвхөн Manual Payment "QPay" сонгосон захиалгад л үйлчилнэ
+  var gateway = (Shopify && Shopify.checkout && Shopify.checkout.gateway) || "";
+  if (gateway.toLowerCase().indexOf("qpay") === -1) return;
+
+  var orderId = Shopify.checkout.order_id;
+  var ret = encodeURIComponent(window.location.href);
+  window.location.replace(
+    BACKEND_URL + "/pay.html"
+      + "?order_id=" + orderId
+      + "&s=" + encodeURIComponent(SECRET)
+      + "&return=" + ret
+  );
+})();
+</script>
