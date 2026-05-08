@@ -42,12 +42,18 @@
       <div class="sub" id="sub">Захиалга ачаалж байна…</div>
       <div class="amount" id="amount">—</div>
 
+      <div id="lookup-container" style="display:none">
+        <p style="color:var(--muted);font-size:14px;margin:0 0 12px">Захиалгынхаа дугаарыг оруулна уу (жишээ нь: 1234)</p>
+        <input id="order-input" type="text" placeholder="Order number" style="width:100%;padding:12px;border-radius:8px;border:1px solid var(--border);background:#1f2433;color:var(--text);font-size:16px;margin-bottom:12px" />
+        <button id="lookup-btn" style="width:100%;padding:12px;border-radius:8px;background:var(--accent);color:#000;border:0;font-size:16px;font-weight:600;cursor:pointer">QR авах</button>
+      </div>
+
       <div id="qr-container" style="display:none">
         <div class="qr-box"><img id="qr" alt="QPay QR" /></div>
         <div class="banks" id="banks"></div>
       </div>
 
-      <div class="status pending" id="status">
+      <div class="status pending" id="status" style="display:none">
         <span class="spinner"></span> Төлбөр хүлээж байна…
       </div>
 
@@ -63,16 +69,28 @@
 (async function() {
   const params = new URLSearchParams(location.search);
   const orderId = params.get('order_id');
-  const secret = params.get('s');
   const successUrl = params.get('return') || '';
 
   const $ = id => document.getElementById(id);
 
   if (!orderId) {
-    $('status').className = 'status error';
-    $('status').textContent = 'order_id заагдаагүй байна';
+    $('sub').textContent = 'Захиалгын дугаар хэрэгтэй';
+    $('amount').textContent = '';
+    $('lookup-container').style.display = 'block';
+    $('lookup-btn').addEventListener('click', () => {
+      const ord = $('order-input').value.trim().replace(/^#/, '');
+      if (!ord) return;
+      const newUrl = new URL(location.href);
+      newUrl.searchParams.set('order_id', ord);
+      location.href = newUrl.toString();
+    });
+    $('order-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') $('lookup-btn').click();
+    });
     return;
   }
+
+  $('status').style.display = 'block';
 
   let order;
   try {
@@ -100,7 +118,7 @@
     const r = await fetch('/api/invoice/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ order_id: orderId, secret }),
+      body: JSON.stringify({ order_id: orderId }),
     });
     if (!r.ok) throw new Error((await r.json()).error || 'invoice үүсгэж чадсангүй');
     invoice = await r.json();
